@@ -1,0 +1,369 @@
+---
+title: "Pertemuan 2 - Regresi"
+author: Kezia Imanuella Vicoria
+output:
+  html_document:
+    theme: yeti
+    toc: true
+    toc_float: true
+---
+
+# DATA 1
+## Pemanggilan *Packages*
+
+```{r}
+#install.packages("https://cran.r-project.org/src/contrib/Archive/orcutt/orcutt_2.1.tar.gz", repos = NULL, type = "source")
+```
+
+```{r}
+#install.packages("orcutt")
+#install.packages("HoRM")
+```
+
+```{r}
+library(dplyr)
+library(TTR)
+library(forecast)
+library(lmtest) #digunakan untuk uji formal pendeteksian autokorelasi
+library(orcutt) #untuk membuat model regresi Cochrane-Orcutt
+library(HoRM) #untuk membuat model regresi Hildreth-Lu
+```
+
+## Input Data 1
+
+Data yang digunakan dalam kesempatan kali ini adalah data IPM Provinsi Gorontalo periode tahun 2010-2021.
+
+```{r}
+periode <- 1:20
+market <- c(3.63,4.20,3.33,4.54,2.89,4.87,4.90,5.29,6.18,7.20,7.25,6.09,6.80,8.65,8.43,8.29,7.18,7.90,8.45,8.23)
+price <- c(0.97,0.95,0.99,0.91,0.98,0.90,0.89,0.86,0.85,0.82,0.79,0.83,0.81,0.77,0.76,0.80,0.83,0.79,0.76,0.78)
+dtmarket <- data.frame(periode, market, price)
+dtmarket <- cbind(market,price)
+dtmarket <- as.data.frame(dtmarket)
+dtmarket
+```
+
+## Eksplorasi Data
+
+Sebelum melakukan regresi, akan diperlihatkan *plot time-series* dari data market and price pada periode 1-20
+
+```{r}
+#Membentuk objek time series
+data.ts<-ts(dtmarket[, c("market", "price")])
+data.ts
+
+#Membuat plot time series
+plot(data.ts,
+        type= "o",
+        main= "Time Series Plot of Market Share and Price",
+        xlab= "Time Period")
+```
+
+## Regresi
+
+```{r}
+# Regresi OLS biasa (mengabaikan periode)
+model_ols <- lm(price ~ market, data = dtmarket)
+summary(model_ols)
+```
+Model yang dihasilkan adalah:  
+$y_i = 1.0954 - 0.0392x_i$  
+Berdasarkan ringkasan model dapat diketahui bahwa hasil uji $F$ memiliki $p\text{-value} < \alpha$. Artinya, minimal terdapat satu variabel yang berpengaruh nyata terhadap model. Hasil uji-$t$ parsial kedua parameter regresi, yaitu intersep dan koefisien regresi juga menunjukkan hal yang sama, yaitu memiliki $p\text{-value} < \alpha$ sehingga nyata dalam taraf . Selanjutnya dapat dilihat juga nilai $R^2 = 0.9511$. Artinya, sebesar 95.11 keragaman nilai dapat dijelaskan oleh peubah. Hasil ini menunjukkan hasil yang bagus, seolah mendapatkan hasil terbaik. Namun, kita perlu melakukan uji terhadap sisaannya seperti berikut ini.
+
+```{r}
+# Sisaan dan fitted value
+sisaan <- residuals(model_ols)
+fitValue <- predict(model_ols)
+
+# Diagnostik dengan eksploratif
+par(mfrow = c(2,2))
+
+# 1. Q-Q Plot
+qqnorm(sisaan)
+qqline(sisaan, col = "purple", lwd = 2)
+
+# 2. Plot Sisaan vs Fitted Values
+plot(fitValue, sisaan, col = "purple", pch = 20, 
+     xlab = "Fitted Values", ylab = "Sisaan", 
+     main = "Sisaan vs Fitted Values")
+abline(a = 0, b = 0, lwd = 2)
+
+# 3. Histogram Sisaan
+hist(sisaan, col = "purple", main = "Histogram of Sisaan", xlab = "Sisaan")
+
+# 4. Plot Sisaan vs Order
+plot(seq_along(sisaan), sisaan, col = "purple", pch = 20, 
+     xlab = "Order", ylab = "Sisaan", 
+     main = "Sisaan vs Order")
+lines(seq_along(sisaan), sisaan, col = "red")
+abline(a = 0, b = 0, lwd = 2)
+```
+
+Dua plot di samping kiri digunakan untuk melihat apakah sisaan menyebar normal. Normal Q-Q Plot di atas menunjukkan bahwa sisaan cenderung menyebar normal, tetapi histogram dari sisaan tidak menunjukkan demikian. Selanjutnya, dua plot di samping kanan digunakan untuk melihat autokorelasi. Plot Sisaan vs *Fitted Value* dan Plot Sisaan vs *Order* menunjukkan adanya pola pada sisaan. Untuk lebih lanjut akan digunakan uji formal melihat normalitas sisaan dan plot ACF dan PACF untuk melihat apakah ada autokorelasi atau tidak.
+
+
+```{r}
+#ACF dan PACF identifikasi autokorelasi
+par(mfrow = c(1,2))
+acf(sisaan)
+pacf(sisaan)
+```
+
+Berdasarkan plot ACF dan PACF, terlihat semua dalam rentang batas dan tidak ada lag yang signifikan. Namun, untuk lebih memastikan akan dilakukan uji formal dengan uji Durbin Watson.
+
+```{r}
+#Deteksi autokorelasi dengan uji-Durbin Watson
+#H0: tidak ada autokorelasi
+#H1: ada autokorelasi
+dwtest(model_ols)
+```
+
+Berdasarkan hasil uji Durbin-Watson, diperoleh nilai statistik $DW$ sebesar 1.1513 dengan $p\text{-value}$ sebesar 0.01099. Dengan $n = 20$, $k = 1$, dan $\alpha = 5\%$, nilai kritis dari tabel Durbin-Watson adalah $dL = 1.201$ dan $dU = 1.411$. Karena nilai $DW$ (1.1513) $< dL$ (1.201) dan $p\text{-value}$ (0.01099) $< \alpha$ (0.05), maka keputusannya adalah Tolak $H_0$. Artinya, pada taraf nyata 5%, terdapat cukup bukti untuk menyatakan bahwa terjadi masalah autokorelasi positif pada sisaan model regresi tersebut. Oleh karena itu, diperlukan penangan autokorelasi. Penanganan yang akan digunakan menggunakan dua metode, yaitu Cochrane-Orcutt dan Hildret-Lu.
+
+## Penanganan Autokorelasi
+
+### Metode Cochrane-Orcutt
+
+Penanganan metode Cochrane-Orcutt dapat dilakukan dengan bantuan packages Orcutt pada aplikasi `R` maupun secara manual. Berikut ini ditampilkan cara menggunakan bantuan `library` *packages* `Orcutt`.
+
+```{r}
+#Penanganan Autokorelasi Cochrane-Orcutt
+modelCO<-cochrane.orcutt(model_ols)
+modelCO
+```
+
+Hasil keluaran model setelah dilakukan penanganan adalah sebagai berikut.  
+$y_i = 1.082996 - 0.037451x_i$
+
+Hasil juga menunjukkan bahwa nilai $DW$ dan $p\text{-value}$ meningkat menjadi 2.09351 dan 0.5266. Nilai $DW$ sudah berada pada rentang $dU < DW < 4-dU$ atau $1.411 < DW < 2.589$. Hal tersebut juga didukung dengan nilai $p\text{-value} > 0.05$, artinya belum cukup bukti menyatakan bahwa sisaan terdapat autokorelasi pada taraf nyata 5\%. Untuk nilai $\hat{\rho}$ optimum yang digunakan adalah 0.41031. 
+
+```{r}
+#Rho optimum
+rho<- modelCO$rho
+rho
+```
+
+### Metode Hildreth-Lu
+
+Penanganan kedua adalah menggunakan metode Hildreth-Lu. Metode ini akan mencari nilai SSE terkecil dan dapat dicari secara manual maupun menggunakan packages. Jika menggunakan packages.
+
+```{r}
+library(HoRM)
+
+y <- dtmarket$price
+x <- dtmarket$market
+
+# grid search rho 0–0.9
+r <- seq(0, 0.9, by = 0.1)
+tab <- data.frame(
+  rho = r,
+  SSE = sapply(r, function(rr) deviance(hildreth.lu(y, x, rr)))
+)
+
+tab            
+rho_hat <- tab$rho[which.min(tab$SSE)]   # rho terbaik
+fit_hl  <- hildreth.lu(y, x, rho_hat)    # model final
+summary(fit_hl)
+```
+
+Pertama-tama akan dicari di mana kira-kira $ρ$ yang menghasilkan SSE minimum. Pada hasil di atas terlihat $ρ$ minimum ketika 0.4. Namun, hasil tersebut masih kurang teliti sehingga akan dicari kembali $ρ$ yang lebih optimum dengan ketelitian yang lebih. Jika sebelumnya jarak antar $ρ$ yang dicari adalah 0.1, kali ini jarak antar $ρ$ adalah 0.001 dan dilakukan pada selang 0.3 sampai dengan 0.5.
+
+```{r}
+rOpt <- seq(0.3, 0.5, by = 0.001)
+
+# Membuat tabel iterasi baru
+tabOpt <- data.frame(
+  rho = rOpt, 
+  SSE = sapply(rOpt, function(rr) deviance(hildreth.lu(y, x, rr)))
+)
+
+head(tabOpt[order(tabOpt$SSE), ])
+
+# Mengambil rho optimum yang paling presisi
+rho_hat_opt <- tabOpt$rho[which.min(tabOpt$SSE)]
+print(paste("Rho optimum presisi:", rho_hat_opt))
+
+# Membuat model final dengan rho yang baru
+fit_hl_opt <- hildreth.lu(y, x, rho_hat_opt)
+summary(fit_hl_opt)
+
+# Cek Durbin-Watson model final
+library(lmtest)
+dwtest(fit_hl_opt)
+```
+
+```{r}
+# Transformasi Balik
+cat("y = ", coef(fit_hl_opt)[1] / (1 - rho_hat_opt), " + ", coef(fit_hl_opt)[2], "x\n", sep = "")
+```
+
+Perhitungan yang dilakukan aplikasi `R` menunjukkan bahwa nilai $ρ$ optimum, yaitu saat SSE terkecil terdapat pada nilai $ρ=0.410$. Hal tersebut juga ditunjukkan pada plot. Selanjutnya dilanjutkan dengan pengujian autokorelasi dengan uji Durbin-Watson.  
+
+Hasil uji Durbin-Watson juga menunjukkan bahwa nilai $DW$ sebesar 2.0928 berada pada selang daerah tidak ada autokorelasi, yaitu pada rentang $dU < DW < 4-dU$ atau $1.411 < DW < 2.589$. Hal tersebut juga didukung oleh $p\text{-value}$ sebesar 0.526, di mana $p\text{-value} > \alpha$ (5\%). Artinya tak tolak $H_0$ atau belum cukup bukti menyatakan bahwa ada autokorelasi dalam data nilai \textit{price} dengan metode Hildreth-Lu pada taraf nyata 5\%.
+
+
+# DATA 2
+
+## Input Data 2
+
+```{r}
+# Input Data 2
+tahun2 <- 1975:2014
+
+sales2 <- c(11.7, 12.0, 12.3, 12.8, 13.1, 13.6, 13.9, 14.4, 14.7, 15.3, 
+            15.5, 15.8, 16.1, 16.6, 16.9, 16.7, 16.9, 17.4, 17.6, 17.9, 
+            18.0, 17.9, 18.0, 18.2, 18.2, 18.3, 18.6, 19.2, 19.3, 19.5, 
+            19.2, 19.3, 19.5, 20.0, 20.0, 19.9, 19.8, 19.9, 20.2, 21.0)
+
+advertising2 <- c(9.4, 9.6, 10.0, 10.4, 10.8, 10.9, 11.7, 12.2, 12.5, 12.9, 
+                  13.0, 13.2, 13.8, 14.2, 14.6, 14.4, 15.0, 15.4, 15.7, 15.9, 
+                  15.9, 16.0, 16.3, 16.2, 16.8, 17.3, 17.6, 18.1, 18.3, 18.5, 
+                  18.7, 18.9, 19.2, 20.0, 20.0, 20.3, 20.4, 21.0, 21.5, 22.1)
+
+dtsales <- data.frame(tahun2, sales2, advertising2)
+dtsales <- cbind(sales2, advertising2)
+dtsales <- as.data.frame(dtsales)
+dtsales
+```
+
+```{r}
+data.ts2 <- ts(dtsales[, c("sales2", "advertising2")])
+data.ts2
+
+#Membuat plot time series
+plot(data.ts2,
+     type = "o",
+     main = "Time Series Plot of Sales and Advertising",
+     xlab = "Time Period")
+```
+
+## Regresi data 2
+
+```{r}
+# Regresi OLS 
+model_ols2 <- lm(sales2 ~ advertising2, data = dtsales)
+summary(model_ols2)
+```
+Model yang dihasilkan adalah:  
+$y_i = 5.96513 -  0.7103x_i$ 
+Berdasarkan ringkasan model dapat diketahui bahwa hasil uji $F$ memiliki $p\text{-value} < \alpha$. Artinya, minimal terdapat satu variabel yang berpengaruh nyata terhadap model. Hasil uji-$t$ parsial kedua parameter regresi, yaitu intersep dan koefisien regresi juga menunjukkan hal yang sama, yaitu memiliki $p\text{-value} < \alpha$ sehingga nyata dalam taraf . Selanjutnya dapat dilihat juga nilai $R^2 = 0.9596$. Artinya, sebesar 95.96 keragaman nilai dapat dijelaskan oleh peubah. Hasil ini menunjukkan hasil yang bagus, seolah mendapatkan hasil terbaik. Namun, kita perlu melakukan uji terhadap sisaannya seperti berikut ini.
+
+```{r}
+# Sisaan dan fitted value
+sisaan2 <- residuals(model_ols2)
+fitValue2 <- predict(model_ols2)
+
+# Diagnostik dengan eksploratif
+par(mfrow = c(2,2))
+
+# 1. Q-Q Plot
+qqnorm(sisaan2)
+qqline(sisaan2, col = "purple", lwd = 2)
+
+# 2. Plot Sisaan vs Fitted Values
+plot(fitValue2, sisaan2, col = "purple", pch = 20, 
+     xlab = "Fitted Values", ylab = "Sisaan", 
+     main = "Sisaan vs Fitted Values")
+abline(a = 0, b = 0, lwd = 2)
+
+# 3. Histogram Sisaan
+hist(sisaan2, col = "purple", main = "Histogram of Sisaan", xlab = "Sisaan")
+
+# 4. Plot Sisaan vs Order
+plot(seq_along(sisaan2), sisaan2, col = "purple", pch = 20, 
+     xlab = "Order", ylab = "Sisaan", 
+     main = "Sisaan vs Order")
+lines(seq_along(sisaan2), sisaan2, col = "red")
+abline(a = 0, b = 0, lwd = 2)
+```
+
+```{r}
+# ACF dan PACF identifikasi autokorelasi
+par(mfrow = c(1,2))
+acf(sisaan2)
+pacf(sisaan2)
+```
+Berdasarkan plot ACF dan PACF, terlihat ada garis yang keluar dari batas dan ada lag yang signifikan. Namun, untuk lebih memastikan akan dilakukan uji formal dengan uji Durbin Watson.
+
+```{r}
+# Deteksi autokorelasi dengan uji-Durbin Watson
+# H0: tidak ada autokorelasi
+# H1: ada autokorelasi
+dwtest(model_ols2)
+```
+Berdasarkan hasil uji Durbin-Watson, diperoleh nilai statistik $DW$ sebesar 0.16204 dengan $p\text{-value} < 2.2 \times 10^{-16}$. Dengan $n = 40$, $k = 1$, dan $\alpha = 5\%$, nilai kritis dari tabel Durbin-Watson adalah $dL = 1.442$ dan $dU = 1.544$. Karena nilai $DW$ (0.16204) $< dL$ (1.442) dan $p\text{-value} < \alpha$ (0.05), maka keputusannya adalah Tolak $H_0$. Artinya, pada taraf nyata 5\%, terdapat cukup bukti untuk menyatakan bahwa terjadi masalah autokorelasi positif pada sisaan model regresi tersebut.
+
+## Penanganan Autokorelasi
+
+### Metode Cochrane-Orcutt
+
+```{r}
+# Penanganan Autokorelasi Cochrane-Orcutt
+modelCO2 <- cochrane.orcutt(model_ols2)
+modelCO2
+```
+Hasil keluaran model setelah dilakukan penanganan adalah sebagai berikut.  
+$y_i = 10.252375 + 0.488489x_i$
+
+Hasil juga menunjukkan bahwa nilai $DW$ dan $p\text{-value}$ meningkat menjadi 1.93925 dan 0.378. Nilai $DW$ sudah berada pada rentang $dU < DW < 4-dU$ atau $1.544 < DW < 2.456$. Hal tersebut juga didukung dengan nilai $p\text{-value} > 0.05$, artinya belum cukup bukti menyatakan bahwa sisaan terdapat autokorelasi pada taraf nyata 5\%. Untuk nilai $\hat{\rho}$ optimum yang digunakan adalah 0.903123. Nilai tersebut dapat diketahui langsung dari ringkasan sintaks \textit{Cochrane-Orcutt}.
+
+```{r}
+#Rho optimum
+rho<- modelCO$rho
+rho
+```
+### Metode Hildreth-Lu  
+
+```{r}
+library(HoRM)
+
+y2 <- dtsales$sales2
+x2 <- dtsales$advertising2
+
+# grid search rho 0–0.9
+r <- seq(0, 0.9, by = 0.1)
+tab2 <- data.frame(
+  rho = r,
+  SSE = sapply(r, function(rr) deviance(hildreth.lu(y2, x2, rr)))
+)
+
+tab2            
+rho_hat2 <- tab2$rho[which.min(tab2$SSE)]   # rho terbaik
+fit_hl2  <- hildreth.lu(y2, x2, rho_hat2)   # model final
+summary(fit_hl2)
+```
+Pertama-tama akan dicari di mana kira-kira $ρ$ yang menghasilkan SSE minimum. Pada hasil di atas terlihat $ρ$ minimum ketika 0.9. Namun, hasil tersebut masih kurang teliti sehingga akan dicari kembali $ρ$ yang lebih optimum dengan ketelitian yang lebih. Jika sebelumnya jarak antar $ρ$ yang dicari adalah 0.1, kali ini jarak antar $ρ$ adalah 0.001 dan dilakukan pada selang 0.9 sampai dengan 0.11.
+
+```{r}
+# Mempersempit pencarian di sekitar rho 0.9 dengan jarak 0.001
+rOpt2 <- seq(0.8, 0.99, by = 0.001)
+
+# Membuat tabel iterasi baru
+tabOpt2 <- data.frame(
+  rho = rOpt2, 
+  SSE = sapply(rOpt2, function(rr) deviance(hildreth.lu(y2, x2, rr)))
+)
+
+# Menampilkan 6 nilai SSE terkecil beserta rho-nya
+head(tabOpt2[order(tabOpt2$SSE), ])
+
+# Mengambil rho optimum yang paling presisi
+rho_hat_opt2 <- tabOpt2$rho[which.min(tabOpt2$SSE)]
+print(paste("Rho optimum presisi:", rho_hat_opt2))
+
+# Membuat model final dengan rho yang baru
+fit_hl_opt2 <- hildreth.lu(y2, x2, rho_hat_opt2)
+summary(fit_hl_opt2)
+
+# Cek Durbin-Watson model final
+library(lmtest)
+dwtest(fit_hl_opt2)
+```
+
+```{r}
+# Transformasi Balik
+cat("y = ", coef(fit_hl_opt2)[1] / (1 - rho_hat_opt2), " + ", coef(fit_hl_opt2)[2], "x\n", sep = "")
+```
+Berdasarkan output model Hildreth-Lu, diperoleh nilai $\hat{\rho}$ optimum presisi sebesar 0.903. Hasil uji Durbin-Watson menunjukkan bahwa nilai $DW$ sebesar 1.9393 berada pada selang daerah tidak ada autokorelasi, yaitu pada rentang $dU < DW < 4-dU$ atau $1.544 < DW < 2.456$. Hal tersebut juga didukung oleh $p\text{-value}$ sebesar 0.378, di mana $p\text{-value} > \alpha$ (5\%). Artinya tak tolak $H_0$ atau belum cukup bukti menyatakan bahwa ada autokorelasi dalam data nilai \textit{sales} dengan metode Hildreth-Lu pada taraf nyata 5\%.
+
+
