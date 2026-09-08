@@ -1,0 +1,271 @@
+---
+title: "Prak 3 MPDW"
+author: "Kezia Imanuella Victoria"
+date: "2026-09-03"
+output: 
+ html_document:
+    theme: yeti
+    toc: true
+    toc_float: true
+---
+
+```{r}
+#PACKAGES
+#install.packages("dLagM") #install jika belum ada
+#install.packages("dynlm") #install jika belum ada
+#install.packages("MLmetrics") #install jika belum ada
+library(dLagM)
+library(dynlm)
+library(MLmetrics)
+library(lmtest)
+library(car)
+```
+# Data 1
+
+```{r}
+periode <- 1:20
+market <- c(3.63,4.20,3.33,4.54,2.89,4.87,4.90,5.29,6.18,7.20,7.25,6.09,6.80,8.65,8.43,8.29,7.18,7.90,8.45,8.23)
+price <- c(0.97,0.95,0.99,0.91,0.98,0.90,0.89,0.86,0.85,0.82,0.79,0.83,0.81,0.77,0.76,0.80,0.83,0.79,0.76,0.78)
+dtmarket <- data.frame(periode, market, price)
+dtmarket <- cbind(market,price)
+dtmarket <- as.data.frame(dtmarket)
+dtmarket
+```
+
+## Pembagian Data
+
+```{r}
+#SPLIT DATA
+train<-dtmarket[1:15,]
+test<-dtmarket[16:20,]
+```
+
+```{r}
+#data time series
+train.ts<-ts(train)
+test.ts<-ts(test)
+data.ts<-ts(dtmarket)
+```
+
+```{r}
+#MODEL KOYCK
+model.koyck <- koyckDlm(x = train$price, y = train$market, intercept = TRUE)
+summary(model.koyck)
+AIC(model.koyck)
+BIC(model.koyck)
+```
+Berdasarkan hasil estimasi menggunakan model Koyck pada R Console, diperoleh persamaan model dan interpretasi pengujian sebagai berikut:
+
+Didapat bahwa peubah $X_t$ dan $Y_{t-1}$ memiliki nilai $P\text{-Value} > 0.05$. Hal ini menunjukkan bahwa peubah $X_t$ dan $Y_{t-1}$ tidak berpengaruh signifikan terhadap $Y_t$. 
+
+Adapun model keseluruhan yang terbentuk dari estimasi tersebut adalah sebagai berikut:  
+$$\hat{Y}_t = 0.43084  - 0.01377 X_t + 0.58350 Y_{t-1}$$
+
+```{r}
+fore.koyck <- forecast(model = model.koyck, x = test$price, h = 5)
+fore.koyck
+mape.koyck <- MAPE(fore.koyck$forecasts, test$market)
+mape.koyck #data test
+#akurasi data training
+GoF(model.koyck)
+```
+
+
+```{r}
+# DLM dengan lag X = 1 (q = 1)
+cons_dlm1 <- dynlm(market ~ price + L(price), data = train.ts)
+
+# ARDL dengan p = 1, q = 0 (hanya lag Y)
+cons_ardl1 <- dynlm(market ~ price + L(market), data = train.ts)
+
+# ARDL dengan p = 1, q = 1 (mengandung lag X dan lag Y)
+cons_ardl2 <- dynlm(market ~ price + L(price) + L(market), data = train.ts)
+
+# DLM dengan lag X sampai order 2 (q = 2)
+cons_dlm2 <- dynlm(market ~ price + L(price) + L(price, 2), data = train.ts)
+```
+
+
+```{r}
+summary(cons_dlm1)
+```
+
+```{r}
+summary(cons_ardl1)
+```
+
+```{r}
+summary(cons_ardl2)
+```
+
+```{r}
+summary(cons_dlm2)
+```
+
+```{r}
+deviance(cons_dlm1)
+```
+
+```{r}
+deviance(cons_ardl1)
+```
+
+```{r}
+deviance(cons_ardl2)
+```
+
+```{r}
+deviance(cons_dlm2)
+```
+Semakin kecil nilai SSE, berarti model lebih baik dalam menyesuaikan data (karena error lebih kecil).
+
+```{r}
+# 1. Menggunakan predict untuk model dynlm
+fore.dlm1  <- predict(cons_dlm1, newdata = test)
+fore.dlm2  <- predict(cons_dlm2, newdata = test)
+fore.ardl2 <- predict(cons_ardl2, newdata = test)
+
+# 2. Menghitung nilai MAPE (pastikan panjang data prediksi dan test$price sudah sama)
+mape.dlm1  <- MAPE(fore.dlm1, test$market)
+mape.dlm2  <- MAPE(fore.dlm2, test$market)
+mape.ardl2 <- MAPE(fore.ardl2, test$market)
+
+# 3. Membuat matriks perbandingan akurasi
+akurasi <- matrix(c(mape.koyck, mape.dlm1, mape.dlm2, mape.ardl2))
+row.names(akurasi) <- c("Koyck", "DLM 1", "DLM 2", "ARDl (1,1)")
+colnames(akurasi) <- c("MAPE")
+akurasi
+```
+Jika dilihat dari MAPE nya, model terbaiknya adalah ARDL (1,1)
+
+```{r}
+par(mfrow=c(1,1))  # atur layout grafik tunggal
+
+# plot data aktual
+plot(test$price, test$market, type="b", col="black")
+
+# Mwnambahkan garis ramalan dari masing-masing model
+# (Koyck tetap pakai $forecasts karena berasal dari fungsi forecast() dLagM)
+points(test$price, fore.koyck$forecasts, col="red");   lines(test$price, fore.koyck$forecasts, col="red")
+
+# (DLM dan ARDL langsung memanggil nama objeknya)
+points(test$price, fore.dlm1, col="blue");             lines(test$price, fore.dlm1, col="blue")
+points(test$price, fore.dlm2, col="orange");           lines(test$price, fore.dlm2, col="orange")
+points(test$price, fore.ardl2, col="green");           lines(test$price, fore.ardl2, col="green")
+
+# legenda model (dipindah ke topright agar tidak menutupi garis grafik yang menurun)
+legend("topright",
+       c("Aktual", "Koyck", "DLM 1", "DLM 2", "ARDL (1,1)"),
+       lty=1, col=c("black","red","blue","orange","green"), cex=0.8)
+```
+
+# data 2
+
+```{r}
+Year <- 1975:2014
+
+Sales <- c(11.7, 12.0, 12.3, 12.8, 13.1, 13.6, 13.9, 14.4, 14.7, 15.3, 
+           15.5, 15.8, 16.1, 16.6, 16.9, 16.7, 16.9, 17.4, 17.6, 17.9, 
+           18.0, 17.9, 18.0, 18.2, 18.2, 18.3, 18.6, 19.2, 19.3, 19.5, 
+           19.2, 19.3, 19.5, 20.0, 20.0, 19.9, 19.8, 19.9, 20.2, 21.0)
+
+Advertising <- c(9.4, 9.6, 10.0, 10.4, 10.8, 10.9, 11.7, 12.2, 12.5, 12.9, 
+                 13.0, 13.2, 13.8, 14.2, 14.6, 14.4, 15.0, 15.4, 15.7, 15.9, 
+                 15.9, 16.0, 16.3, 16.2, 16.8, 17.3, 17.6, 18.1, 18.3, 18.5, 
+                 18.7, 18.9, 19.2, 20.0, 20.0, 20.3, 20.4, 21.0, 21.5, 22.1)
+
+dtsales <- data.frame(Year, Sales, Advertising)
+
+dtsales
+```
+
+```{r}
+# 80% dari 40 = 32 baris (Tahun 1975 - 2006)
+train <- dtsales[1:32, ]
+
+# 20% dari 40 = 8 baris (Tahun 2007 - 2014)
+test <- dtsales[33:40, ]
+
+train.ts <- ts(train, start = 1975, frequency = 1)
+```
+
+
+```{r}
+library(dynlm)
+
+ardl_10 <- dynlm(Sales ~ Advertising + L(Sales), data = train.ts)
+
+ardl_11 <- dynlm(Sales ~ Advertising + L(Advertising) + L(Sales), data = train.ts)
+
+ardl_12 <- dynlm(Sales ~ Advertising + L(Advertising) + L(Advertising, 2) + L(Sales), data = train.ts)
+
+ardl_22 <- dynlm(Sales ~ Advertising + L(Advertising) + L(Advertising, 2) + L(Sales) + L(Sales, 2), data = train.ts)
+```
+
+```{r}
+# Membandingkan AIC dari keempat model
+AIC(ardl_10, ardl_11, ardl_12, ardl_22)
+```
+
+```{r}
+library(MLmetrics)
+
+# Forecasting 8 periode ke depan (sesuai jumlah data test)
+pred_10 <- predict(ardl_10, newdata = test)
+pred_11 <- predict(ardl_11, newdata = test)
+pred_12 <- predict(ardl_12, newdata = test)
+pred_22 <- predict(ardl_22, newdata = test)
+
+# Menghitung MAPE antara hasil prediksi dan data aktual (Sales di data test)
+mape_10 <- MAPE(pred_10, test$Sales)
+mape_11 <- MAPE(pred_11, test$Sales)
+mape_12 <- MAPE(pred_12, test$Sales)
+mape_22 <- MAPE(pred_22, test$Sales)
+
+# Menggabungkan hasil akurasi ke dalam satu matriks
+akurasi_ardl <- matrix(c(mape_10, mape_11, mape_12, mape_22))
+row.names(akurasi_ardl) <- c("ARDL (1,0)", "ARDL (1,1)", "ARDL (1,2)", "ARDL (2,2)")
+colnames(akurasi_ardl) <- c("MAPE")
+
+# Menampilkan perbandingan akurasi
+akurasi_ardl
+```
+Jika dilihat dari MAPE nya, model terbaiknya adalah ARDL (2,2)
+
+```{r}
+# ringkasan model terbaik
+summary(ardl_22)
+
+# Plot Visualisasi
+par(mfrow=c(1,1))  
+
+# Plot data aktual dari data testing (Sales)
+plot(test$Year, test$Sales, type="b", col="black", 
+     xlab="Tahun", ylab="Sales", main="Data Aktual vs Prediksi ARDL (2,2)")
+
+# Menambahkan titik dan garis dari hasil ramalan model ARDL (2,2)
+# (Menggunakan objek pred_22 yang sudah dibuat pada langkah akurasi sebelumnya)
+points(test$Year, pred_22, col="purple", pch=16)
+lines(test$Year, pred_22, col="purple", lwd=2)
+
+legend("topleft",
+       legend = c("Data Aktual", "Prediksi ARDL (2,2)"),
+       lty = 1, col = c("black", "purple"), pch = c(1, 16), cex = 0.8)
+```
+
+Berdasarkan hasil summary dari estimasi model ARDL (2,2), diperoleh kesimpulan dan interpretasi sebagai berikut:
+
+1. Persamaan Model  
+Persamaan matematis untuk model peramalan yang terbentuk adalah:  
+$$\hat{Y}_t = 0.9491 + 0.3306 X_t + 0.0762 X_{t-1} - 0.3612 X_{t-2} + 0.8118 Y_{t-1} + 0.0934 Y_{t-2}$$
+Keterangan: $Y$ merepresentasikan Sales dan $X$ merepresentasikan Advertising.
+
+2. Pengujian Signifikansi Parsial (Uji t)  
+Berdasarkan tingkat signifikansi $5\%$ ($0.05$), diperoleh keputusan:  
+- Saat Ini ($X_t$): Berpengaruh signifikan terhadap penjualan karena nilai P-Value = $0.0427$ < $0.05$. Nilai koefisien bernilai positif, yang berarti peningkatan pengeluaran iklan di tahun berjalan akan secara langsung menaikkan penjualan.  
+- Sales Satu Tahun Sebelumnya ($Y_{t-1}$): Berpengaruh sangat signifikan terhadap penjualan saat ini karena nilai P-Value = $0.0002$ < $0.05$. Hal ini mengindikasikan adanya efek momentum yang kuat dari penjualan tahun sebelumnya.  
+- Variabel Lag Lainnya:Lag $1$ Advertising ($X_{t-1}$), Lag $2$ Advertising ($X_{t-2}$), dan Lag $2$ Sales ($Y_{t-2}$) secara parsial tidak berpengaruh signifikan terhadap Sales karena masing-masing memiliki nilai P-Value > $0.05$.
+
+3. Kebaikan Model  
+- Uji Simultan (Uji F): Peubah independen beserta seluruh variabel lag-nya secara bersama-sama berpengaruh sangat signifikan terhadap Sales saat ini. Hal ini dibuktikan dengan nilai P-Value < $2.2 \times 10^{-16}$.  
+- Koefisien Determinasi ($R^2$): Nilai Multiple R-squared sebesar $0.9946$ (atau $99.46\%$) menunjukkan bahwa model yang dibangun sangat kuat dan presisi. Model berhasil menjelaskan keragaman data Sales sebesar $99.46\%$, dan hanya $0.54\%$ sisanya yang dipengaruhi oleh peubah lain di luar model.
