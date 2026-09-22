@@ -1,0 +1,336 @@
+---
+title: "Praktikum MPDW 5"
+author: "Kezia Imanuella Victoria"
+output:
+  rmdformats::downcute:
+    default_style: "light"
+    toc_depth: 3
+---
+
+
+# Pembangkitan Proses MA(2)
+
+```{r}
+set.seed(1234) 
+wn <- rnorm(300, mean = 0, sd = 1) 
+
+ma2_manual <- numeric(300)
+
+ma2_manual[2] <- wn[2] + 0.4 * wn[1]
+
+for(i in 3:300){
+   ma2_manual[i] <- wn[i] + 0.4 * wn[i - 1] + 0.6 * wn[i - 2]
+}
+
+ma2_manual
+```
+
+```{r}
+# Membangkitkan 300 data MA(2)
+ma2 <- arima.sim(list(order = c(0, 0, 2), ma = c(0.4, 0.6)), n = 300)
+
+# Menampilkan datanya
+ma2
+```
+
+
+## Plot Time Series
+
+```{r}
+ts.plot(ma2)
+```
+
+## Plot ACF
+
+```{r}
+acf(ma2,lag.max = 20)
+```
+
+## Plot PACF
+
+```{r}
+pacf(ma2)
+```
+
+## Plot EACF
+
+```{r}
+TSA::eacf(ma2)
+```
+
+
+
+
+## Scatterplot Antar Lag
+### Korelasi antara Yt dengan Yt−1
+
+```{r}
+#Yt
+yt_ma <- ma2[-1]
+yt_ma
+```
+
+```{r}
+#Yt-1
+yt_1_ma <- ma2[-300]
+yt_1_ma
+```
+
+```{r}
+plot(y=yt_ma,x=yt_1_ma)
+```
+```{r}
+cor(yt_ma,yt_1_ma)
+```
+
+Berdasarkan scatterplot tersebut, terlihat bahwa terdapat hubungan positif antara Yt dengan Yt−1
+
+### Korelasi antara Yt dengan Yt−2
+
+```{r}
+yt_ma2 <- ma2[-c(1,2)]
+yt_ma2
+```
+
+```{r}
+yt_2_ma <- ma2[-c(299,300)]
+yt_2_ma
+```
+```{r}
+plot(y=yt_ma2,x=yt_2_ma)
+```
+```{r}
+cor(yt_ma2,yt_2_ma)
+```
+
+Berdasarkan scatterplot tersebut, terlihat bahwa terdapat hubungan positif antara Yt dengan Yt−2. Mengingat model MA(2) yang digunakan memiliki parameter positif ($\theta_1 = 0.4$ dan $\theta_2 = 0.6$), secara teoritis amatan tersebut memang akan berkolerasi positif pada dua lag pertamanya
+
+```{r}
+# Menghitung autokorelasi teoritis hingga lag 2
+acf_teoritis <- ARMAacf(ma = c(0.4, 0.6), lag.max = 2)
+acf_teoritis
+```
+Terdapat perbedaan antara nilai empiris (hasil simulasi saya) dan nilai teoritis ($\rho_1 \approx 0.421, \rho_2 \approx 0.395$) dan ini normal karena Variasi Sampel Terbatas dan Proses Pembangkitan Acak (White Noise)
+
+# Pembangkitan Proses AR(2)
+
+```{r}
+set.seed(1234)
+n <- 300
+wn <- rnorm(n, mean = 0, sd = 1)
+
+ar_manual <- numeric(n)
+
+ar_manual[1] <- wn[1]
+ar_manual[2] <- wn[2] + 0.5 * ar_manual[1]
+
+for (i in 3:n) {
+  ar_manual[i] <- wn[i] + 0.5 * ar_manual[i-1] + 0.2 * ar_manual[i-2]
+}
+
+ar_manual
+```
+
+```{r}
+set.seed(1234)
+
+# Membangkitkan data dengan arima.sim
+ar2 <- arima.sim(n = 300, list(order = c(2, 0, 0), ar = c(0.5, 0.2)))
+
+# Menampilkan sebagian data
+ar2
+```
+
+## Plot time series
+
+```{r}
+ts.plot(ar2)
+```
+
+## Plot ACF
+
+```{r}
+acf(ar2)
+```
+
+## Plot PACF
+
+```{r}
+pacf(ar2)
+```
+Berdasarkan plot PACF tersebut, terlihat bahwa plot PACF cuts off pada lag kedua, sejalan dengan teori yang ada
+
+## Plot EACF
+
+```{r}
+TSA::eacf(ar2)
+```
+Berdasarkan pola segitiga nol pada plot EACF, terlihat bahwa segitiga nol berada pada ordo AR(1) dan ordo MA(1)
+
+## Korelasi antara Yt dengan Yt−1
+
+```{r}
+#Yt
+yt_ar <- ar2[-1]
+yt_ar
+```
+
+```{r}
+#Yt-1
+yt_1_ar <- ar2[-300]
+yt_1_ar
+```
+
+```{r}
+plot(y=yt_ar,x=yt_1_ar)
+```
+Berdasarkan scatterplot tersebut, terlihat bahwa terdapat hubungan positif antara Yt dengan Yt−1. Hal ini sesuai dengan teori yang ada
+
+```{r}
+cor(yt_ar,yt_1_ar)
+```
+
+## Korelasi antara Yt dengan Yt−2
+
+
+```{r}
+yt_ar2 <- ar2[-c(1,2)]
+yt_ar2
+```
+
+```{r}
+#Yt-2
+yt_2_ar <- ar2[-c(299,300)]
+yt_2_ar
+```
+
+```{r}
+plot(y=yt_ar2,x=yt_2_ar)
+```
+Berdasarkan scatterplot tersebut, terlihat bahwa terdapat hubungan positif antara Yt dengan Yt−2. Hal ini sesuai dengan teori yang ada
+
+```{r}
+cor(yt_ar2,yt_2_ar)
+```
+
+
+```{r}
+# Menghitung autokorelasi teoritis AR(2) hingga lag 2
+acf_teoritis_ar <- ARMAacf(ar = c(0.5, 0.2), lag.max = 2)
+acf_teoritis_ar
+```
+
+# Pembangkitan Proses ARMA(2,2)
+
+```{r}
+set.seed(1234)
+
+n <- length(wn)
+phi <- c(0.5, 0.2)
+theta <- c(0.4, 0.6) 
+
+y.arma <- numeric(n)
+
+y.arma[1] <- wn[1]
+y.arma[2] <- phi[1] * y.arma[1] + wn[2] + theta[1] * wn[1]
+
+for (i in 3:n) {
+  y.arma[i] <- phi[1] * y.arma[i-1] + phi[2] * y.arma[i-2] + wn[i] + theta[1] * wn[i-1] + theta[2] * wn[i-2]
+}
+
+y.arma
+```
+
+```{r}
+arma22 <- arima.sim(n = 300, list(ar = c(0.5, 0.2), ma = c(0.4, 0.6)))
+arma22
+```
+
+## Plot Time Series
+
+```{r}
+par(mfrow = c(1, 2))
+ts.plot(y.arma)
+ts.plot(arma22)
+```
+Berdasarkan plot time series tersebut, terlihat bahwa model ARMA(1,1) cenderung stasioner dalam rataan
+
+## Plot ACF
+
+```{r}
+par(mfrow = c(1, 2))
+acf(y.arma)
+acf(arma22)
+```
+Berdasarkan plot ACF tersebut, terlihat bahwa model ARMA(2,2) hasil simulasi memiliki plot ACF yang tails off, sesuai dengan teori yang ada
+
+## Plot PACF
+
+```{r}
+par(mfrow = c(1, 2))
+pacf(y.arma)
+pacf(arma22)
+```
+Berdasarkan plot PACF tersebut, terlihat bahwa model ARMA(1,1) hasil simulasi memiliki plot PACF yang tails off, sesuai dengan teori
+
+## Plot EACF
+
+```{r}
+TSA::eacf(y.arma)
+```
+```{r}
+TSA::eacf(arma22)
+```
+Secara teoritis, titik sudut (vertex) untuk model ARMA(2,2) seharusnya berada di baris 2 (AR=2) dan kolom 2 (MA=2). Pada plot ini, sel (2,2) memang berisi lambang 'o'. Namun, pola segitiga ke arah kanan bawah tidak terbentuk sempurna karena terganggu oleh lambang 'x' (korelasi signifikan) pada sel (3,3). Secara visual empiris, titik sudut yang relatif membentuk batasan lebih rapi justru mengarah ke sel (1,2) yang mengindikasikan ARMA(1,2).
+
+
+## Korelasi antara Yt dengan Yt−1
+
+```{r}
+yt_arma <- arma22[-1]
+yt_arma
+```
+
+```{r}
+#Yt-1
+yt_1_arma <- arma22[-300]
+yt_1_arma
+```
+
+```{r}
+plot(y=yt_arma,x=yt_1_arma)
+```
+Berdasarkan scatterplot tersebut, terlihat bahwa terdapat hubungan positif antara Yt dengan Yt−1
+
+```{r}
+cor(yt_arma,yt_1_arma)
+```
+
+## Korelasi antara Yt dengan Yt−2
+
+```{r}
+yt_arma2 <- arma22[-c(1, 2)]
+yt_arma2
+```
+
+```{r}
+yt_2_arma <- arma22[-c(299, 300)]
+yt_2_arma
+```
+
+```{r}
+plot(y=yt_arma2,x=yt_2_arma)
+```
+
+```{r}
+cor(yt_arma2,yt_2_arma)
+```
+
+
+```{r}
+# Menghitung Autokorelasi Teoritis
+acf_teoritis_arma <- ARMAacf(ar = c(0.5, 0.2), ma = c(0.4, 0.6), lag.max = 2)
+acf_teoritis_arma
+```
+Korelasi antara Yt dengan Yt−1 dan Yt dengan Yt-2 dari hasil simulasi mendekati perhitungan teoritis.
+
